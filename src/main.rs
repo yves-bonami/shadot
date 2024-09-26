@@ -1,6 +1,7 @@
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 use clap::Parser;
+use config::{init_config, update};
 use inquire::{ui::RenderConfig, CustomType, Select};
 
 mod config;
@@ -31,6 +32,8 @@ async fn main() -> Result<()> {
 }
 
 fn initialize() -> Result<()> {
+    init_config();
+
     let shadow_dir_prompt: CustomType<PathBuf> = CustomType {
         message: "Choose your shadow directory:",
         starting_input: None,
@@ -54,6 +57,13 @@ fn initialize() -> Result<()> {
     let type_options: Vec<&str> = vec!["TOML", "YAML", "JSON"];
     let config_type =
         Select::new("Choose your preferred config file type:", type_options).prompt()?;
+
+    config::update(|c| {
+        c.shadow_dir = shadow_dir.to_path_buf();
+        c.preferred_config_type = config_type.to_string();
+    });
+
+    config::save()?;
 
     println!(
         "Selected directory {} with file type {}",
