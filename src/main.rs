@@ -1,8 +1,9 @@
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, process::exit};
 
 use clap::Parser;
-use config::{init_config, update};
-use inquire::{ui::RenderConfig, CustomType, Select};
+use config::init_config;
+use inquire::{ui::RenderConfig, Confirm, CustomType, Select};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 mod config;
 
@@ -21,9 +22,17 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
+
     color_eyre::install()?;
 
     let cli = Cli::parse();
+
+    tracing::info!("running shadot cli");
+
     match cli.command {
         Command::Init => initialize()?,
     }
@@ -34,15 +43,24 @@ async fn main() -> Result<()> {
 fn initialize() -> Result<()> {
     init_config();
 
+    let proj_dir = directories::ProjectDirs::from("run", "dev dot run", "shadot").unwrap();
+
+    if proj_dir.config_dir().read_dir()?.count() > 0 {
+        let overwrite =
+            Confirm::new("Shadot already initialized, are you sure you want to overwrite?")
+                .prompt()?;
+
+        if !overwrite {
+            exit(1);
+        }
+
+        fs::remove_dir_all(proj_dir.config_dir())?;
+    }
+
     let shadow_dir_prompt: CustomType<PathBuf> = CustomType {
         message: "Choose your shadow directory:",
         starting_input: None,
-        default: Some(
-            directories::ProjectDirs::from("run", "dev dot run", "shadot")
-                .unwrap()
-                .data_dir()
-                .to_path_buf(),
-        ),
+        default: Some(proj_dir.data_dir().to_path_buf()),
         placeholder: None,
         help_message: "This is where shadow copies of your config files will be kept".into(),
         formatter: &|i| i.to_string_lossy().into(),
@@ -54,7 +72,7 @@ fn initialize() -> Result<()> {
     };
     let shadow_dir = shadow_dir_prompt.prompt()?;
 
-    let type_options: Vec<&str> = vec!["TOML", "YAML", "JSON"];
+    let type_options: Vec<&str> = vec!["toml", "yaml", "json"];
     let config_type =
         Select::new("Choose your preferred config file type:", type_options).prompt()?;
 
@@ -64,12 +82,6 @@ fn initialize() -> Result<()> {
     });
 
     config::save()?;
-
-    println!(
-        "Selected directory {} with file type {}",
-        shadow_dir.to_string_lossy(),
-        config_type
-    );
 
     Ok(())
 }

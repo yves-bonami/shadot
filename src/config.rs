@@ -1,6 +1,6 @@
 use std::{fs, path::PathBuf, process::exit, sync::Arc};
 
-use arc_swap::{access::Access, ArcSwapOption};
+use arc_swap::ArcSwapOption;
 use figment::{
     providers::{Format, Json, Toml, Yaml},
     Figment,
@@ -48,21 +48,21 @@ pub fn update<F: Fn(&mut Config)>(f: F) {
 
 pub fn save() -> crate::Result<()> {
     let dir = directories::ProjectDirs::from("run", "dev dot run", "shadot").unwrap();
-    let mut result_string = String::new();
-    let config = config();
-    match config.preferred_config_type.as_str() {
-        "JSON" => {
-            result_string = serde_json::to_string(&config)?;
-        }
-        "YAML" => {
-            result_string = serde_yaml::to_string(&config)?;
-        }
-        _ => {
-            result_string = toml::to_string_pretty(&config)?;
-        }
+    if !dir.config_dir().exists() {
+        fs::create_dir_all(dir.config_dir())?;
     }
 
-    fs::write(dir.config_dir(), &result_string)?;
+    let config = config();
+    let result_string = match config.preferred_config_type.as_str() {
+        "json" => serde_json::to_string_pretty(&config)?,
+        "yaml" => serde_yaml::to_string(&config)?,
+        _ => toml::to_string_pretty(&config)?,
+    };
+
+    let mut file_path = dir.config_dir().join("shadot");
+    file_path.set_extension(&config.preferred_config_type);
+    println!("writing to {}", file_path.to_string_lossy());
+    fs::write(&file_path, &result_string)?;
 
     Ok(())
 }
